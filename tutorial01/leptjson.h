@@ -8,8 +8,11 @@ typedef enum {
 
 // Json是一个树形结构，由节点组成，最终需要实现一个树的数据结构，每个节点使用 lept_value 结构体表示
 // 每个节点就是一个：key-value 中的 key
+//用于存储json数据解析结果的 结构体
+// 例如：lept_type 用于存储false/false/null类型json数据的类型
 typedef struct {
     lept_type type;
+    double n;//用于存储数值型json数据的本身的数据，也就是说，仅用于 type==LEPT_NUMBER时的数据存储
 }lept_value;
 
 // lept_parse 返回值

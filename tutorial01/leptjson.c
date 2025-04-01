@@ -1,12 +1,15 @@
 #include "leptjson.h"
 #include <assert.h>  /* assert() */
 #include <stdlib.h>  /* NULL */
+#include <stdbool.h> // bool type
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 
 typedef struct {
     const char* json;
 }lept_context;
+
+
 
 //略过空格、Tab、换行，找到第一个非空格字符
 static void lept_parse_whitespace(lept_context* c) {
@@ -18,6 +21,13 @@ static void lept_parse_whitespace(lept_context* c) {
     c->json = p;
 }
 
+//解析数值型json
+static double lept_parse_number(lept_context* c, lept_value* v)
+{
+    // assert(v != NULL && c)
+}
+
+#if 0
 //解析 为null的json值（指 "=" 右边的数据）
 /* null  = "null" */
 static int lept_parse_null(lept_context* c, lept_value* v) {
@@ -54,8 +64,36 @@ static int lept_parse_true(lept_context* c, lept_value* v)
     v->type = LEPT_TRUE;
     return LEPT_PARSE_OK;
 }
+#endif
+static int check_in_order(lept_context* c, lept_value* v,int n,const char* pattern,lept_type expectType)
+{
+    // EXPECT(c,str[0]);
+    for(size_t i=1;i<n;i++)//第0个已经判断过了
+    {
+        if(c->json[i] != pattern[i])
+        {
+            return LEPT_PARSE_INVALID_VALUE;
+        }
+    }
+    c->json += n;
+    v->type = expectType;
+    return LEPT_PARSE_OK;
+}
 
-
+static int lept_parse_type(lept_context* c, lept_value* v)
+{
+    char ch = *c->json;
+    // assert(ch == 'n' || ch == 'f' || ch == 't');外部已经判断过了
+    switch(ch)
+    {
+        case 'n':
+            return check_in_order(c,v,4,"null",LEPT_NULL);
+        case 'f':
+            return check_in_order(c,v,5,"false",LEPT_FALSE);
+        case 't':
+            return check_in_order(c,v,4,"true",LEPT_TRUE);
+    }
+}
 
 //c指向了传入json值的第一个非空字符，v是存储c指向内容的 解析完毕的 结果type
 /* 解析：value = null / false / true */
@@ -63,9 +101,11 @@ static int lept_parse_true(lept_context* c, lept_value* v)
 static int lept_parse_value(lept_context* c, lept_value* v) {
     switch (*c->json) 
     {
-        case 'n':  return lept_parse_null(c, v);//null
-        case 'f': return lept_parse_false(c,v);
-        case 't': return lept_parse_true(c,v);
+        case 'n':
+        case 'f':
+        case 't':
+            return lept_parse_type(c,v);//整合为一个函数
+
         case '\0': return LEPT_PARSE_EXPECT_VALUE;//全空白
         default:   return LEPT_PARSE_INVALID_VALUE;//非法的json值
     }

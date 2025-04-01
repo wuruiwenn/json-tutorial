@@ -1,4 +1,0 @@
-/home/riven/cpp_projs/Lept-Json/tutorial01/builds/CMakeFiles/leptjson.dir
-/home/riven/cpp_projs/Lept-Json/tutorial01/builds/CMakeFiles/leptjson_test.dir
-/home/riven/cpp_projs/Lept-Json/tutorial01/builds/CMakeFiles/edit_cache.dir
-/home/riven/cpp_projs/Lept-Json/tutorial01/builds/CMakeFiles/rebuild_cache.dir
