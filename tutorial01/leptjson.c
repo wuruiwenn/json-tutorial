@@ -2,8 +2,11 @@
 #include <assert.h>  /* assert() */
 #include <stdlib.h>  /* NULL */
 #include <stdbool.h> // bool type
+#include <errno.h> //ERANGE、errno
+#include <math.h>    /* HUGE_VAL，-HUGE_VAL，正无穷，负无穷*/
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
+#define ISDIGIT(ch)  ((ch) >= '0' && (ch) <= '9')
 
 typedef struct {
     const char* json;
@@ -21,11 +24,11 @@ static void lept_parse_whitespace(lept_context* c) {
     c->json = p;
 }
 
-//解析数值型json
-static double lept_parse_number(lept_context* c, lept_value* v)
-{
-    // assert(v != NULL && c)
-}
+// //解析数值型json
+// static double lept_parse_number(lept_context* c, lept_value* v)
+// {
+//     // assert(v != NULL && c)
+// }
 
 #if 0
 //解析 为null的json值（指 "=" 右边的数据）
@@ -65,7 +68,8 @@ static int lept_parse_true(lept_context* c, lept_value* v)
     return LEPT_PARSE_OK;
 }
 #endif
-static int check_in_order(lept_context* c, lept_value* v,int n,const char* pattern,lept_type expectType)
+
+static int check_in_order(lept_context* c, lept_value* v,size_t n,const char* pattern,lept_type expectType)
 {
     // EXPECT(c,str[0]);
     for(size_t i=1;i<n;i++)//第0个已经判断过了
@@ -95,6 +99,39 @@ static int lept_parse_type(lept_context* c, lept_value* v)
     }
 }
 
+
+
+//解析number类型的Json文本
+static int lept_parse_number(lept_context* c, lept_value* v) 
+{
+    errno = 0; // C 语言标准库中的一个全局变量，strtod函数会影响到这个值
+    char* end;
+    v->n = strtod(c->json, &end);//解析的结果数值存储进lept_value
+
+    //解析失败的一些场景
+    if((!ISDIGIT(*c->json) && *c->json != '-') || !ISDIGIT(c->json[strlen(c->json)-1]))//首部出现非数字，除了是符号，其他都不合法。末尾出现非数字，全部不合法
+    {
+        return LEPT_PARSE_INVALID_VALUE;
+    }
+    if(*c->json == '+' || end == c->json || *end != '\0')//输入的字符串无法解析，部分解析成功(解析到某位置后面还有不能解析的字符)
+    {
+        return LEPT_PARSE_INVALID_VALUE;
+    }
+    // 解析成功的场景
+    // 解析成功，但结果溢出范围，若同时是正无穷，负无穷，导致的溢出，则返回TOO_BIG。
+    // 否则其他溢出情况，对于strtod来说，应该表达为 解析正常，溢出情况都解析为0
+    if(errno == ERANGE && (v->n == HUGE_VAL || v->n == -HUGE_VAL))
+    {
+        return LEPT_PARSE_NUMBER_TOO_BIG;
+    }
+    // v->n = tmp;
+    c->json = end;
+    v->type = LEPT_NUMBER;
+    return LEPT_PARSE_OK;
+}
+
+
+
 //c指向了传入json值的第一个非空字符，v是存储c指向内容的 解析完毕的 结果type
 /* 解析：value = null / false / true */
 /* 提示：下面代码没处理 false / true，将会是练习之一 */
@@ -104,10 +141,11 @@ static int lept_parse_value(lept_context* c, lept_value* v) {
         case 'n':
         case 'f':
         case 't':
-            return lept_parse_type(c,v);//整合为一个函数
-
-        case '\0': return LEPT_PARSE_EXPECT_VALUE;//全空白
-        default:   return LEPT_PARSE_INVALID_VALUE;//非法的json值
+            return lept_parse_type(c,v);//null,false,true类型的Json文本数据解析，整合为一个函数
+        case '\0':
+            return LEPT_PARSE_EXPECT_VALUE;//全空白
+        default:
+            return lept_parse_number(c,v);
     }
 }
 
@@ -132,7 +170,17 @@ int lept_parse(lept_value* v, const char* json) {
     return ret;
 }
 
-lept_type lept_get_type(const lept_value* v) {
+lept_type lept_get_type(const lept_value* v) 
+{
     assert(v != NULL);
     return v->type;
 }
+
+
+double lept_get_number(const lept_value* v)
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_NUMBER);
+    return v->n;
+}
+
