@@ -1,6 +1,8 @@
 #ifndef LEPTJSON_H__
 #define LEPTJSON_H__
 
+#include<stddef.h> // size_t
+
 // JSON 中有 6 种数据类型
 typedef enum { 
     LEPT_NULL, LEPT_FALSE, LEPT_TRUE, LEPT_NUMBER, LEPT_STRING, LEPT_ARRAY, LEPT_OBJECT 
@@ -13,10 +15,28 @@ typedef enum {
 // 每个节点就是一个：key-value 中的 key
 //用于存储json数据解析结果的 结构体
 // 例如：lept_type 用于存储false/false/null类型json数据的类型
+// typedef struct {
+//     lept_type type;
+//     double n;//用于存储数值型json数据的本身的数据，也就是说，仅用于 type==LEPT_NUMBER时的数据存储
+
+//     char* str;//用于存储 字符串类型 的Json数据
+//     size_t len;
+// }lept_value;
+
 typedef struct {
     lept_type type;
-    double n;//用于存储数值型json数据的本身的数据，也就是说，仅用于 type==LEPT_NUMBER时的数据存储
+    union
+    {
+        double n;//存储number数据
+        struct //存储字符串数据
+        {
+            char* str;
+            size_t len;
+        }s;
+    }uion;
 }lept_value;
+
+
 
 // lept_parse 返回值
 enum {
@@ -34,6 +54,10 @@ int lept_parse(lept_value* v, const char* json);
 
 lept_type lept_get_type(const lept_value* v);// 获取Json对象的数据类型
 double lept_get_number(const lept_value* v);//获取json数值，当且仅当json是nuber类型
+
+void lept_set_string(lept_value* v, const char* s, size_t len);
+
+
 
 #endif /* LEPTJSON_H__ */
 

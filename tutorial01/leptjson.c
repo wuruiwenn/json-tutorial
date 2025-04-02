@@ -4,6 +4,7 @@
 #include <stdbool.h> // bool type
 #include <errno.h> //ERANGE、errno
 #include <math.h>    /* HUGE_VAL，-HUGE_VAL，正无穷，负无穷*/
+#include<string.h> // strlen
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)  ((ch) >= '0' && (ch) <= '9')
@@ -106,7 +107,7 @@ static int lept_parse_number(lept_context* c, lept_value* v)
 {
     errno = 0; // C 语言标准库中的一个全局变量，strtod函数会影响到这个值
     char* end;
-    v->n = strtod(c->json, &end);//解析的结果数值存储进lept_value
+    v->uion.n = strtod(c->json, &end);//解析的结果数值存储进lept_value
 
     //解析失败的一些场景
     if((!ISDIGIT(*c->json) && *c->json != '-') || !ISDIGIT(c->json[strlen(c->json)-1]))//首部出现非数字，除了是符号，其他都不合法。末尾出现非数字，全部不合法
@@ -120,7 +121,7 @@ static int lept_parse_number(lept_context* c, lept_value* v)
     // 解析成功的场景
     // 解析成功，但结果溢出范围，若同时是正无穷，负无穷，导致的溢出，则返回TOO_BIG。
     // 否则其他溢出情况，对于strtod来说，应该表达为 解析正常，溢出情况都解析为0
-    if(errno == ERANGE && (v->n == HUGE_VAL || v->n == -HUGE_VAL))
+    if(errno == ERANGE && (v->uion.n == HUGE_VAL || v->uion.n == -HUGE_VAL))
     {
         return LEPT_PARSE_NUMBER_TOO_BIG;
     }
@@ -181,6 +182,21 @@ double lept_get_number(const lept_value* v)
 {
     assert(v != NULL);
     assert(v->type == LEPT_NUMBER);
-    return v->n;
+    return v->uion.n;
 }
 
+// 设置一个值为字符串
+// "abcde",len = 5,但要开辟6个字节空间，最后一位放结束符
+void lept_set_string(lept_value* v, const char* s, size_t len)
+{
+    assert(v != NULL && (s != NULL || len == 0));
+
+    // lept_free(v);
+    //字符串拷贝
+    char* newStr = (char*)malloc(len+1);
+    v->uion.s.str = newStr;
+    memcpy(v->uion.s.str,s,len);
+    v->uion.s.str[len] = '\0';//字符串要以结束符 '\0'结尾
+    v->uion.s.len = len;
+    v->type = LEPT_STRING;
+}
