@@ -45,6 +45,7 @@ enum {
     LEPT_PARSE_INVALID_VALUE, // 错误码：若值不是那三种字面值，传回 LEPT_PARSE_INVALID_VALUE
     LEPT_PARSE_ROOT_NOT_SINGULAR, // 错误码：若一个值之后，在空白之后还有其他字符，传回 LEPT_PARSE_ROOT_NOT_SINGULAR
     LEPT_PARSE_NUMBER_TOO_BIG ,//错误码，用于number类型数据解析，解析的结果数字数值溢出
+    LEPT_PARSE_MISS_QUOTATION_MARK,//错误码，用于string类型数据解析，字符串没有正常以引号结束
 };
 
 //解析Json，解析为一个树状数据结构(原始Json字符串解析为一个Json对象的数据结构)

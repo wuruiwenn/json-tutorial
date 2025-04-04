@@ -14,12 +14,12 @@
 #define LEPT_PARSE_STACK_INIT_SIZE 256
 #endif
 
-//用于存放 待解析的 原始数据 的结构
+//用于存放 待解析的原始数据、解析完毕的数据 的结构
 typedef struct {
-    const char* json;
+    const char* json;//表示原始的待解析的json数据
 
     char* stack;//解析 数组、字符串、对象 数据类型数据时，先把解析完毕的字符，存入缓冲区，最后执行各数据类型的set方法时，再从缓冲区读取数据，写入lept_value
-    size_t capacity, top;//堆栈容量，栈顶位置（为什么要用栈的先进后出结构？）
+    size_t capacity, top;//堆栈容量，栈顶位置(栈当前存储了的字节数)（为什么要用栈的先进后出结构？）
 }lept_context;
 
 
@@ -231,7 +231,7 @@ void lept_set_string(lept_value* v, const char* s, size_t len)
     //字符串拷贝
     char* newStr = (char*)malloc(len+1);
     v->uion.s.str = newStr;
-    memcpy(v->uion.s.str,s,len);
+    memcpy(v->uion.s.str,s,len);//memcpy直接逐字节拷贝字符进去
     v->uion.s.str[len] = '\0';//字符串要以结束符 '\0'结尾
     v->uion.s.len = len;
     v->type = LEPT_STRING;
@@ -250,12 +250,72 @@ void lept_value_init_type(lept_value* v)
 }
 
 //缓冲栈区，push，pop
-static void push(lept_context* c,size_t size)
+//push:把解析完毕的字符，压入栈缓冲区
+//pop:从栈缓冲区中，取出解析完的数据，存入lept_value
+
+//内存申请，stack内存空间的初始化、扩容
+//一次性存储size字节数据 (对string来说是字符，对数组来说，是数组元素)
+//这里栈实现是以<字节为单位>存储的。每次可要求压入任意大小size的数据，返回数据起始的指针
+static void* lept_context_stack_realloc(lept_context* c,size_t size)
 {
-    
+    assert(size > 0);
+
+    if(c->top + size >= c->capacity)
+    {
+        //缓冲区根本没有初始化
+        if(c->capacity == 0)
+            c->capacity = LEPT_PARSE_STACK_INIT_SIZE;
+
+        //缓冲区需要扩容
+        while(c->top + size >= c->capacity)
+            c->capacity = (c->capacity) * 1.5;
+
+        c->stack = (char*)realloc(c->stack,c->capacity);
+    }
+    void* ret;
+    //返回所插入的新数据的内存起始位置，后续真正push元素，从ret位置开始插入内存即可
+    //c->stack + c->top： 指针运算，会按指针指向数据类型所占字节数进行批量偏移，
+    //c->stach为char*，char-1字节，则c->stack+c->top表示自从c->stack偏移 1*top 个字节
+    ret = c->stack + c->top;
+    c->top = c->top + size;
+    return ret;
+}
+//向栈压入一个char
+void lept_context_stack_push(lept_context* c, char ch) {
+    // *(char*)lept_context_push(c, sizeof(char)) = ch;
+    void* ret = lept_context_stack_realloc(c,sizeof(char));//先为该ch申请内存（除非导致扩容，否则不需要申请，高效）
+    *((char*)ret) = ch;//再 把字符实际存入栈
 }
 
-static void pop(lept_context* c)
-{
+//弹出元素
+//更新栈顶位置
+static void* lept_context_stack_pop(lept_context* c, size_t size) {
+    assert(c->top >= size);
+    c->top = c->top - size;
+    return c->stack + c->top;//返回新的栈顶位置
+}
 
+//解析字符串
+static int lept_parse_string(lept_context* c, lept_value* v) {
+    
+    EXPECT(c,'\"');//期望字符串的第一个字符是 引号
+    size_t preTop = c->top;//此刻(还未加入解析完毕的字符)的栈顶
+    size_t len;//记录栈内压入了len字节数据
+    while(1)
+    {
+        char* p = c->json;//c->josn原始输入的 const char* 字符串
+        char ch = *p++;//当前字符。后置++，先使用旧值p，执行*p，然后指针偏移p++
+        switch(ch)
+        {
+            case '\"'://遇到最右边的字符串结束引号，解析成功结束，将栈缓冲区内全部字符取出存入lept_value
+                len = c->top - preTop;//当前栈内已经push了len个字节(字符)
+                void* ret = lept_context_stack_pop(c,len);//一次性取出len字节的字符数据，会更新c->top，下降的
+                lept_set_string(v,(const char*)(ret),len);//把这len字节字符数据存入lept_value
+                return LEPT_PARSE_OK;
+            case '\0'://执行至此，说明该输入字符串没有 以引号结束
+                return LEPT_PARSE_MISS_QUOTATION_MARK;
+            default://正常字符
+                lept_context_stack_push(c,ch);//解析完毕的数据（此处为string的各字符）存入 栈缓冲区，内部会更新c->top栈顶
+        }
+    }
 }
