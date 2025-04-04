@@ -185,13 +185,25 @@ double lept_get_number(const lept_value* v)
     return v->uion.n;
 }
 
+//释放string数据类型的内存，以及初始化 type为LEPT_NULL，表示没有任何类型
+void lept_value_free_string(lept_value* v)
+{
+    assert(v != NULL);
+    if(v->type == LEPT_STRING)
+    {
+        free(v->uion.s.str);
+    }
+    // v->type = LEPT_NULL;
+    lept_value_init_type(v);
+}
+
 // 设置一个值为字符串
 // "abcde",len = 5,但要开辟6个字节空间，最后一位放结束符
 void lept_set_string(lept_value* v, const char* s, size_t len)
 {
     assert(v != NULL && (s != NULL || len == 0));
 
-    // lept_free(v);
+    lept_value_free_string(v);
     //字符串拷贝
     char* newStr = (char*)malloc(len+1);
     v->uion.s.str = newStr;
@@ -199,4 +211,16 @@ void lept_set_string(lept_value* v, const char* s, size_t len)
     v->uion.s.str[len] = '\0';//字符串要以结束符 '\0'结尾
     v->uion.s.len = len;
     v->type = LEPT_STRING;
+}
+const char* lept_get_string(const lept_value* v)
+{
+    assert(v->type == LEPT_STRING);
+    return v->uion.s.str;
+}
+
+
+void lept_value_init_type(lept_value* v)
+{
+    assert(v != NULL);
+    v->type = LEPT_NULL;
 }

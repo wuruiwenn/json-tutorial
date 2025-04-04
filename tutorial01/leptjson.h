@@ -52,12 +52,28 @@ enum {
 //参数json: 传入的Json文本内容，，例如 const char json[] = "true ";
 int lept_parse(lept_value* v, const char* json);
 
-lept_type lept_get_type(const lept_value* v);// 获取Json对象的数据类型
-double lept_get_number(const lept_value* v);//获取json数值，当且仅当json是nuber类型
+//所有数据类型的json数据的 写入、读取 （set、get）
+//数据存入lept_value，lept_value相当于一个针对所有数据类型共用的一个结构体，用于存储数据
+//它包括所存储数据本身(double n、char* str...)、以及数据的类型标识(type)
 
+//set: 新数据，存入lept_value
+//get: 从当前lept_value中读取数据即可，lept_value对象任意时刻只会是某一种数据类型的存储器
+
+lept_type lept_get_type(const lept_value* v);// 获取Json对象的数据类型
+
+double lept_get_number(const lept_value* v);//获取json数值，当且仅当json是nuber类型
+void lept_set_number(lept_value* v, double n);//把数据n，写入lept_value
+
+const char* lept_get_string(const lept_value* v);
+size_t lept_get_string_length(const lept_value* v);
 void lept_set_string(lept_value* v, const char* s, size_t len);
 
+int lept_get_bool(const lept_value* v);
+void lept_set_bool(lept_value* v,int boolval);
 
+void lept_value_init_type(lept_value* v);//由于lept_value是所有Json数据类型共用的存器，所以每次用于存储新类型，要把内部初始化。包括type、数据本身...
 
-#endif /* LEPTJSON_H__ */
+void lept_value_free_string(lept_value* v);//释放string类型的内存空间
+
+#endif
 

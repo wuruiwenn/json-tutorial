@@ -21,6 +21,9 @@ static int test_pass = 0;
 
 #define EXPECT_EQ_INT(expect, actual) EXPECT_EQ_BASE((expect) == (actual), expect, actual, "%d")
 
+#define EXPECT_EQ_STRING(expect_str,actual_str,actual_len) \
+        EXPECT_EQ_BASE((actual_len == sizeof(expect_str)-1) && (memcmp(expect_str,actual_str,actual_len) == 0),\
+        expect_str,actual_str,"%s")
 
 #define TEST_ERROR(error, json)\
     do {\
@@ -146,6 +149,19 @@ static void test_parse_number()
     TEST_NUMBER(-1.7976931348623157e+308, "-1.7976931348623157e+308");
 }
 
+//测试 string数据类型的get、set
+static void test_access_string()
+{
+    lept_value v;
+    lept_value_init_type(&v);//初始化type = LEPT_NULL，表示此时没有任何类型
+
+    lept_set_string(&v,"",0);//内部会设置 type = LEPT_STRING
+    EXPECT_EQ_STRING("",lept_get_string(&v),0);//测试str数据
+    lept_set_string(&v,"abc",3);
+    EXPECT_EQ_STRING("abc",lept_get_string(&v),3);//测试str数据
+
+}
+
 static void test_parse() {
     test_parse_null();//测试 null 的解析函数是否正确
     test_parse_false();
@@ -155,6 +171,7 @@ static void test_parse() {
     test_parse_root_not_singular();
 
     test_parse_number();
+    test_access_string();//测试string数据类型
 }
 
 
