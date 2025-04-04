@@ -42,6 +42,18 @@ static int test_pass = 0;
         EXPECT_EQ_INT(number,lept_get_number(&v)); /*解析的number类型数据，解析得到的数值是否正确*/  \
     }while(0)
 
+#define TEST_STRING(ExpetStr,InputStr) \
+    do { \
+        lept_value v; \
+        v.type = LEPT_STRING; \
+        EXPECT_EQ_INT(LEPT_PARSE_OK,lept_parse(&v,InputStr));\
+        EXPECT_EQ_INT(LEPT_STRING, lept_get_type(&v));\
+        EXPECT_EQ_STRING(ExpetStr,lept_get_string(&v),lept_get_string_length(&v));\
+    }while(0)
+
+
+
+
 static void test_parse_null() {
     lept_value v;
     v.type = LEPT_FALSE;
@@ -153,13 +165,28 @@ static void test_parse_number()
 static void test_access_string()
 {
     lept_value v;
-    lept_value_init_type(&v);//初始化type = LEPT_NULL，表示此时没有任何类型
+    lept_value_init(&v);//初始化type = LEPT_NULL，表示此时没有任何类型
 
     lept_set_string(&v,"",0);//内部会设置 type = LEPT_STRING
     EXPECT_EQ_STRING("",lept_get_string(&v),0);//测试str数据
     lept_set_string(&v,"abc",3);
     EXPECT_EQ_STRING("abc",lept_get_string(&v),3);//测试str数据
 
+}
+
+//解析string，测试
+static void test_parse_string()
+{
+    TEST_STRING("Hello", "\"Hello\"");
+
+    // TEST_STRING("A ","A ");
+    // TEST_STRING(".",".");
+    // TEST_STRING("abc","\"abc\"");
+    // TEST_STRING("aAbBc.C.","aAbBc.C.");
+    // TEST_STRING("", "\"\"");
+
+    // TEST_STRING("Hello\nWorld", "\"Hello\\nWorld\"");
+    // TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
 }
 
 static void test_parse() {
@@ -172,6 +199,8 @@ static void test_parse() {
 
     test_parse_number();
     test_access_string();//测试string数据类型
+
+    test_parse_string();//测试string的解析
 }
 
 
