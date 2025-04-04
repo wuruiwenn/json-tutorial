@@ -4,13 +4,22 @@
 #include <stdbool.h> // bool type
 #include <errno.h> //ERANGE、errno
 #include <math.h>    /* HUGE_VAL，-HUGE_VAL，正无穷，负无穷*/
-#include<string.h> // strlen
+#include <string.h> // strlen
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)  ((ch) >= '0' && (ch) <= '9')
 
+//栈容量
+#ifndef LEPT_PARSE_STACK_INIT_SIZE
+#define LEPT_PARSE_STACK_INIT_SIZE 256
+#endif
+
+//用于存放 待解析的 原始数据 的结构
 typedef struct {
     const char* json;
+
+    char* stack;//解析 数组、字符串、对象 数据类型数据时，先把解析完毕的字符，存入缓冲区，最后执行各数据类型的set方法时，再从缓冲区读取数据，写入lept_value
+    size_t capacity, top;//堆栈容量，栈顶位置（为什么要用栈的先进后出结构？）
 }lept_context;
 
 
@@ -137,6 +146,7 @@ static int lept_parse_number(lept_context* c, lept_value* v)
 /* 解析：value = null / false / true */
 /* 提示：下面代码没处理 false / true，将会是练习之一 */
 static int lept_parse_value(lept_context* c, lept_value* v) {
+    //判断输入数据的类型，调用不同的具体解析方法
     switch (*c->json) 
     {
         case 'n':
@@ -150,11 +160,21 @@ static int lept_parse_value(lept_context* c, lept_value* v) {
     }
 }
 
+//统一解析任何类型数据的函数
 int lept_parse(lept_value* v, const char* json) {
-    lept_context c;
+
     assert(v != NULL);
+
+    //定义并初始化lept_context，lept_context用于存放原始输入的数据（char* json）
+    //因为后续需要不断对输入数据进行解析动作，所以定义一个结构lept_context，方便传输
+    lept_context c;
     c.json = json;
     v->type = LEPT_NULL;
+    // lept_value_init_type(v);
+
+    c.stack = NULL;//初始化用于缓冲的栈区
+    c.capacity = c.top = 0;
+
     lept_parse_whitespace(&c);//略过空格,"space TTT space"
 
     //若字符之后还有其他字符，则应该返回LEPT_PARSE_ROOT_NOT_SINGULAR
@@ -168,6 +188,10 @@ int lept_parse(lept_value* v, const char* json) {
         }
     }
     // return lept_parse_value(&c, v);//正式解析所有可能的json值
+
+    assert(c.top == 0);//在释放时，加入了assert确保所有数据都被弹出
+    free(c.stack);
+
     return ret;
 }
 
@@ -223,4 +247,15 @@ void lept_value_init_type(lept_value* v)
 {
     assert(v != NULL);
     v->type = LEPT_NULL;
+}
+
+//缓冲栈区，push，pop
+static void push(lept_context* c,size_t size)
+{
+    
+}
+
+static void pop(lept_context* c)
+{
+
 }
