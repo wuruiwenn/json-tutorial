@@ -1,3 +1,5 @@
+
+
 #include <stdio.h>
 #include <stdlib.h> /* NULL, strtod() */
 #include <string.h>
@@ -25,6 +27,8 @@ static int test_pass = 0;
         EXPECT_EQ_BASE((actual_len == sizeof(expect_str)-1) && (memcmp(expect_str,actual_str,actual_len) == 0),\
         expect_str,actual_str,"%s")
 
+#define EXPECT_EQ_DOUBLE(expect, actual) EXPECT_EQ_BASE((expect) == (actual), expect, actual, "%.17g")
+
 #define TEST_ERROR(error, json)\
     do {\
         lept_value v;\
@@ -49,10 +53,12 @@ static int test_pass = 0;
         EXPECT_EQ_INT(LEPT_PARSE_OK,lept_parse(&v,InputStr));\
         EXPECT_EQ_INT(LEPT_STRING, lept_get_type(&v));\
         EXPECT_EQ_STRING(ExpetStr,lept_get_string(&v),lept_get_string_length(&v));\
+        lept_value_free(&v);\
     }while(0)
 
 
-
+#define EXPECT_TRUE(actual) EXPECT_EQ_BASE((actual) != 0, "true", "false", "%s")
+#define EXPECT_FALSE(actual) EXPECT_EQ_BASE((actual) == 0, "false", "true", "%s")
 
 static void test_parse_null() {
     lept_value v;
@@ -70,7 +76,7 @@ static void test_parse_false() {
     EXPECT_EQ_INT(LEPT_FALSE,lept_get_type(&v));
 }
 
-static void test_parse_true(){
+static void test_parse_true() {
     lept_value v;
     v.type = LEPT_TRUE;
     EXPECT_EQ_INT(LEPT_PARSE_OK,lept_parse(&v,"true"));
@@ -169,24 +175,42 @@ static void test_access_string()
 
     lept_set_string(&v,"",0);//内部会设置 type = LEPT_STRING
     EXPECT_EQ_STRING("",lept_get_string(&v),0);//测试str数据
-    lept_set_string(&v,"abc",3);
-    EXPECT_EQ_STRING("abc",lept_get_string(&v),3);//测试str数据
+    lept_set_string(&v,"abcd",4);
+    EXPECT_EQ_STRING("abcd",lept_get_string(&v),4);//测试str数据
 
+    lept_value_free(&v);//注释，用来测试 valgrind的内存泄漏检测效果
+    //对于 分配 "abc" 的字符串 内存来说，实际分配了4字节，因为还有结束符
 }
 
 //解析string，测试
 static void test_parse_string()
 {
-    TEST_STRING("Hello", "\"Hello\"");
+    TEST_STRING("Hello", "\"Hello\"");//真正输入是 \"Hello\"，实际为 "Hello"
 
-    // TEST_STRING("A ","A ");
-    // TEST_STRING(".",".");
-    // TEST_STRING("abc","\"abc\"");
-    // TEST_STRING("aAbBc.C.","aAbBc.C.");
-    // TEST_STRING("", "\"\"");
+    TEST_STRING("", "\"\"");
 
-    // TEST_STRING("Hello\nWorld", "\"Hello\\nWorld\"");
-    // TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
+    TEST_STRING("Hello\nWorld", "\"Hello\\nWorld\"");
+    TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
+}
+
+static void test_access_bool() {
+    lept_value v;
+    lept_value_init(&v);
+    lept_set_string(&v, "a", 1);
+    lept_set_bool(&v, 1);
+    EXPECT_TRUE(lept_get_bool(&v));
+    lept_set_bool(&v, 0);
+    EXPECT_FALSE(lept_get_bool(&v));
+    lept_value_free(&v);
+}
+
+static void test_access_number() {
+    lept_value v;
+    lept_value_init(&v);
+    lept_set_string(&v, "a", 1);
+    lept_set_number(&v, 1234.5);
+    EXPECT_EQ_DOUBLE(1234.5, lept_get_number(&v));
+    lept_value_free(&v);
 }
 
 static void test_parse() {
@@ -196,11 +220,15 @@ static void test_parse() {
     test_parse_expect_value();//测试空白
     test_parse_invalid_value();
     test_parse_root_not_singular();
-
     test_parse_number();
+
+    //以下可能产生内存泄漏
     test_access_string();//测试string数据类型
 
     test_parse_string();//测试string的解析
+
+    test_access_bool();
+    test_access_number();
 }
 
 

@@ -87,6 +87,7 @@ void lept_set_bool(lept_value* v,int boolval);
 // 包括type、数据本身...是字符串类型，还得free释放动态申请的内存空间
 void lept_value_init(lept_value* v);
 
+void lept_value_free(lept_value* v);
 
 // void lept_value_free_string(lept_value* v);//释放string类型的内存空间
 

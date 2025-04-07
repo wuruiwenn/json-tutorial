@@ -13,3 +13,7 @@ target_link_libraries(leptjson_test leptjson)
 
 
 set(CMAKE_C_STANDARD 99)  # 或者 11, 17, 23
+
+set(CMAKE_BUILD_TYPE Debug) 
+# 告诉cmake——想要用 Debug 模式 编译项目，指定cmake构建模式的一种方式，主要用来控制编译参数，比如是否 包含调试信息、是否优化等
+# 指定为Debug模式，则会生成调试信息（用于 GDB、Valgrind 等）

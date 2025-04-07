@@ -1,3 +1,5 @@
+
+
 #include "leptjson.h"
 #include <assert.h>  /* assert() */
 #include <stdlib.h>  /* NULL */
@@ -95,19 +97,14 @@ static int check_in_order(lept_context* c, lept_value* v,size_t n,const char* pa
 }
 
 
-lept_type lept_get_type(const lept_value* v) 
+lept_type lept_get_type(const lept_value* v)
 {
     assert(v != NULL);
     return v->type;
 }
 
 
-double lept_get_number(const lept_value* v)
-{
-    assert(v != NULL);
-    assert(v->type == LEPT_NUMBER);
-    return v->uion.n;
-}
+
 
 //释放string数据类型的内存，以及初始化 type为LEPT_NULL，表示没有任何类型
 // void lept_value_free_string(lept_value* v)
@@ -126,8 +123,8 @@ double lept_get_number(const lept_value* v)
 void lept_set_string(lept_value* v, const char* s, size_t len)
 {
     assert(v != NULL && (s != NULL || len == 0));
+    lept_value_free(v);//释放之前的内存，并重置type=NULL
 
-    lept_value_init(v);
     //字符串拷贝
     char* newStr = (char*)malloc(len+1);
     v->uion.s.str = newStr;
@@ -153,7 +150,13 @@ size_t lept_get_string_length(const lept_value* v)
 void lept_value_init(lept_value* v)
 {
     assert(v != NULL);
-    if(v->type == LEPT_STRING)//若是字符串类型，还要释放内存
+    v->type = LEPT_NULL;//置为默认LEPT_NULL类型
+}
+
+void lept_value_free(lept_value* v)
+{
+    assert(v != NULL);
+    if(v->type == LEPT_STRING && v->uion.s.str != NULL)//若是字符串类型，还要释放内存
     {
         free(v->uion.s.str);
     }
@@ -219,8 +222,23 @@ int lept_get_bool(const lept_value* v)
 void lept_set_bool(lept_value* v,int boolval)
 {
     assert(v != NULL);
-    assert(v->type == LEPT_TRUE || v->type == LEPT_FALSE);
+    lept_value_free(v);
     v->type = boolval ? LEPT_TRUE : LEPT_FALSE;
+}
+
+void lept_set_number(lept_value* v, double n)
+{
+    assert(v != NULL);
+    lept_value_free(v);
+    v->uion.n = n;
+    v->type = LEPT_NUMBER;
+}
+
+double lept_get_number(const lept_value* v)
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_NUMBER);
+    return v->uion.n;
 }
 
 
@@ -273,26 +291,36 @@ static int lept_parse_number(lept_context* c, lept_value* v)
 }
 
 //解析字符串
-static int lept_parse_string(lept_context* c, lept_value* v) {
+//输入若是一个字符串，必然是左右带双引号的：
+//   "abc"————字符串
+//    abc ————不是字符串
+// 而且实际 test.c中，用宏来测试的，传入字符串
+static int lept_parse_string(lept_context* c, lept_value* v) { // "abc"
     
-    EXPECT(c,'\"');//期望字符串的第一个字符是 引号
+    //期望字符串的第一个字符是 引号，EXPECT会跳过这个字符，所以实际 双引号，被解析后没有存储起来
+    //所以，输入的json字符串数据是包含两边双引号的，但是解析结果中只存储下来了双引号中间的所有字符
+    EXPECT(c,'\"');
     size_t preTop = c->top;//此刻(还未加入解析完毕的字符)的栈顶
     size_t len;//记录栈内压入了len字节数据
 
-    const char* p = c->json;//c->josn原始输入的 const char* 字符串，const是修饰p指向内容，p本身可变
+    //c->josn原始输入的 const char* 字符串，const是修饰p指向内容，p本身可变
+    //p指向当前遍历的字符
+    const char* p = c->json;
     while(1)
     {
         char ch = *p++;//当前字符。后置++，先使用旧值p，执行*p，然后指针偏移p++
         switch(ch)
         {
-            case '\"'://遇到最右边的字符串结束引号，解析成功结束，将栈缓冲区内全部字符取出存入lept_value
+            //遇到最右边的字符串结束引号，解析成功结束，将栈缓冲区内全部字符取出存入lept_value
+            //注意，这个结束符 双引号，并没有被存储下来，只是作为标记，存储此前放入缓冲区的字符
+            case '\"':
                 len = c->top - preTop;//当前栈内已经push了len个字节(字符)
                 void* ret = lept_context_stack_pop(c,len);//一次性取出len字节的字符数据，会更新c->top，下降的
                 lept_set_string(v,(const char*)(ret),len);//把这len字节字符数据存入lept_value
-                c->json = p;
+                c->json = p;//更新指针到 待解析的位置
                 return LEPT_PARSE_OK;
-             case '\\':
-                switch (*p++) 
+            case '\\'://转义字符，是中间部分的，不是起始位置，以及结束位置的，因为起始，结束位置的字符情况在其他case都处理过了
+                switch (*p++)
                 {
                     case '\"': lept_context_stack_push(c, '\"'); break;
                     case '\\': lept_context_stack_push(c, '\\'); break;
@@ -303,16 +331,18 @@ static int lept_parse_string(lept_context* c, lept_value* v) {
                     case 'r':  lept_context_stack_push(c, '\r'); break;
                     case 't':  lept_context_stack_push(c, '\t'); break;
                     default:
+                        // 解析错误处理，如果遇到非法的，则要回退c->top，因为此前可能有合法的字符已经被解析而缓存到栈中，
+                        // 那么此时遇到非法字符没法解析，则此前的数据都要抛弃才合理
                         c->top = preTop;
                         return LEPT_PARSE_INVALID_STRING_ESCAPE;
                 }
                 break;
-            case '\0'://执行至此，说明该输入字符串没有 以引号结束
-                c->top = preTop;
+            case '\0'://能够执行至此，说明该输入字符串没有 以引号结束
+                c->top = preTop;//解析错误处理
                 return LEPT_PARSE_MISS_QUOTATION_MARK;
             default://正常字符
-                if ((unsigned char)ch < 0x20) { 
-                    c->top = preTop;
+                if ((unsigned char)ch < 0x20) { //非法字符： ASCII 码小于 0x20 的控制字符
+                    c->top = preTop;//解析错误处理
                     return LEPT_PARSE_INVALID_STRING_CHAR;
                 }
                 lept_context_stack_push(c,ch);//解析完毕的数据（此处为string的各字符）存入 栈缓冲区，内部会更新c->top栈顶
