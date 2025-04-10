@@ -1,5 +1,5 @@
 
-
+# include <stdio.h>
 #include "leptjson.h"
 #include <assert.h>  /* assert() */
 #include <stdlib.h>  /* NULL */
@@ -10,6 +10,7 @@
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)  ((ch) >= '0' && (ch) <= '9')
+#define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
 
 //栈容量
 #ifndef LEPT_PARSE_STACK_INIT_SIZE
@@ -93,6 +94,7 @@ static int check_in_order(lept_context* c, lept_value* v,size_t n,const char* pa
     }
     c->json += n;
     v->type = expectType;
+    // printf("解析成功");
     return LEPT_PARSE_OK;
 }
 
@@ -230,7 +232,7 @@ void lept_set_number(lept_value* v, double n)
 {
     assert(v != NULL);
     lept_value_free(v);
-    v->uion.n = n;
+    v->uion.number = n;
     v->type = LEPT_NUMBER;
 }
 
@@ -238,10 +240,50 @@ double lept_get_number(const lept_value* v)
 {
     assert(v != NULL);
     assert(v->type == LEPT_NUMBER);
-    return v->uion.n;
+    return v->uion.number;
 }
 
 
+int lept_get_array_length(const lept_value* v)//获取数组长度
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_ARRAY);
+    return v->uion.array.arr_size;
+}
+lept_value* lept_get_array_element(const lept_value* v,size_t indx)//获取数组元素
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_ARRAY);
+    assert(indx >= 0 && indx < v->uion.array.arr_size);
+    return (v->uion.array.arr) + indx;
+}
+
+
+size_t lept_get_object_size(const lept_value* v)
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_OBJECT);
+    return v->uion.object.object_size;
+}
+//获取json对象的第index个member的key
+const char* lept_get_object_key(const lept_value* v, size_t index)
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_OBJECT);
+    return v->uion.object.memb[index].key;
+}
+size_t lept_get_object_key_length(const lept_value* v, size_t index)
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_OBJECT);
+    return v->uion.object.memb[index].key_length;
+}
+lept_value* lept_get_object_value(const lept_value* v, size_t index)
+{
+    assert(v != NULL);
+    assert(v->type == LEPT_OBJECT);
+    return &(v->uion.object.memb[index].value);
+}
 
 
 static int lept_parse_literal(lept_context* c, lept_value* v)
@@ -264,29 +306,39 @@ static int lept_parse_literal(lept_context* c, lept_value* v)
 //解析number类型的Json文本
 static int lept_parse_number(lept_context* c, lept_value* v) 
 {
-    errno = 0; // C 语言标准库中的一个全局变量，strtod函数会影响到这个值
-    char* end;
-    v->uion.n = strtod(c->json, &end);//解析的结果数值存储进lept_value
+    const char* p = c->json;
+    if (*p == '-') p++;
 
-    //解析失败的一些场景
-    if((!ISDIGIT(*c->json) && *c->json != '-') || !ISDIGIT(c->json[strlen(c->json)-1]))//首部出现非数字，除了是符号，其他都不合法。末尾出现非数字，全部不合法
+    if (*p == '0')
     {
-        return LEPT_PARSE_INVALID_VALUE;
+        p++;
     }
-    if(*c->json == '+' || end == c->json || *end != '\0')//输入的字符串无法解析，部分解析成功(解析到某位置后面还有不能解析的字符)
+    else 
     {
-        return LEPT_PARSE_INVALID_VALUE;
+        if (!ISDIGIT1TO9(*p)) return LEPT_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++);
     }
-    // 解析成功的场景
-    // 解析成功，但结果溢出范围，若同时是正无穷，负无穷，导致的溢出，则返回TOO_BIG。
-    // 否则其他溢出情况，对于strtod来说，应该表达为 解析正常，溢出情况都解析为0
-    if(errno == ERANGE && (v->uion.n == HUGE_VAL || v->uion.n == -HUGE_VAL))
+    if (*p == '.') 
+    {
+        p++;
+        if (!ISDIGIT(*p)) return LEPT_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++);
+    }
+    if (*p == 'e' || *p == 'E') //科学计数法的判断
+    {
+        p++;
+        if (*p == '+' || *p == '-') p++;
+        if (!ISDIGIT(*p)) return LEPT_PARSE_INVALID_VALUE;
+        for (p++; ISDIGIT(*p); p++);
+    }
+    errno = 0;// C 语言标准库中的一个全局变量，strtod函数会影响到这个值
+    v->uion.number = strtod(c->json, NULL);//调用库函数解析
+    if (errno == ERANGE && (v->uion.number == HUGE_VAL || v->uion.number == -HUGE_VAL))
     {
         return LEPT_PARSE_NUMBER_TOO_BIG;
     }
-    // v->n = tmp;
-    c->json = end;
     v->type = LEPT_NUMBER;
+    c->json = p;
     return LEPT_PARSE_OK;
 }
 
@@ -295,13 +347,12 @@ static int lept_parse_number(lept_context* c, lept_value* v)
 //   "abc"————字符串
 //    abc ————不是字符串
 // 而且实际 test.c中，用宏来测试的，传入字符串
-static int lept_parse_string(lept_context* c, lept_value* v) { // "abc"
-    
+static int lept_parse_string_raw(lept_context* c, char** str, size_t* len_ptr) // "abc"
+{ 
     //期望字符串的第一个字符是 引号，EXPECT会跳过这个字符，所以实际 双引号，被解析后没有存储起来
     //所以，输入的json字符串数据是包含两边双引号的，但是解析结果中只存储下来了双引号中间的所有字符
     EXPECT(c,'\"');
     size_t preTop = c->top;//此刻(还未加入解析完毕的字符)的栈顶
-    size_t len;//记录栈内压入了len字节数据
 
     //c->josn原始输入的 const char* 字符串，const是修饰p指向内容，p本身可变
     //p指向当前遍历的字符
@@ -314,9 +365,9 @@ static int lept_parse_string(lept_context* c, lept_value* v) { // "abc"
             //遇到最右边的字符串结束引号，解析成功结束，将栈缓冲区内全部字符取出存入lept_value
             //注意，这个结束符 双引号，并没有被存储下来，只是作为标记，存储此前放入缓冲区的字符
             case '\"':
-                len = c->top - preTop;//当前栈内已经push了len个字节(字符)
-                void* ret = lept_context_stack_pop(c,len);//一次性取出len字节的字符数据，会更新c->top，下降的
-                lept_set_string(v,(const char*)(ret),len);//把这len字节字符数据存入lept_value
+                *len_ptr = c->top - preTop;//当前栈内已经push了len个字节(字符)，len当然是用于 malloc动态内存分配的 确定的数目，这就是栈缓冲区的意义，可以拿到固定数目的len，这样就可 以固定字节数，进行malloc
+                *str = lept_context_stack_pop(c,*len_ptr);//一次性取出len字节的字符数据，会更新c->top，下降的
+                // lept_set_string(v,(const char*)(ret),len);//把这len字节字符数据存入lept_value
                 c->json = p;//更新指针到 待解析的位置
                 return LEPT_PARSE_OK;
             case '\\'://转义字符，是中间部分的，不是起始位置，以及结束位置的，因为起始，结束位置的字符情况在其他case都处理过了
@@ -350,50 +401,239 @@ static int lept_parse_string(lept_context* c, lept_value* v) { // "abc"
     }
 }
 
-//c指向了传入json值的第一个非空字符，v是存储c指向内容的 解析完毕的 结果type
-/* 解析：value = null / false / true */
-/* 提示：下面代码没处理 false / true，将会是练习之一 */
+static int lept_parse_string(lept_context* c, lept_value* v)
+{
+    int ret;
+    char* s;//用于存储解析结果
+    size_t len;
+    if ((ret = lept_parse_string_raw(c, &s, &len)) == LEPT_PARSE_OK)//传指针，函数内部通过反解指针，写入数据
+    {
+        lept_set_string(v, s, len);//把解析成功的数据存入 lept_value v
+    }
+    return ret;
+}
+
+//解析 Json 数组 类型数据
+/*
+    整体流程：
+    在循环中建立一个临时值（lept_value e），
+    然后调用 lept_parse_value() 去把元素解析至这个临时值，完成后把临时值压栈。
+    当遇到 ]，把栈内的元素弹出，分配内存，生成数组值。
+*/
+static int lept_parse_value(lept_context* c, lept_value* v);//解析数组，需要调用lept_parse_value，它们会互相调用，要先声明
+static int lept_parse_array(lept_context* c, lept_value* v)
+{
+    EXPECT(c,'['); //内部已执行c->json++，实时指向了下一个未解析的字符
+    lept_parse_whitespace(c);//略过空格
+    if(*c->json == ']')//数组是空的,例如 "[]"
+    {
+        v->uion.array.arr = NULL;
+        v->uion.array.arr_size = 0;
+        v->type = LEPT_ARRAY;
+        c->json ++;
+        return LEPT_PARSE_OK;
+    }
+    // 例如，一个涵盖情况较多的例子
+    // 数组 = "[1,2,"3",["abc",2,[1,2,'A'],false],null]"
+    // 依次出现：number类型、string类型、数组类型、true/false类型，null类型
+
+    //直接解析当前元素
+    int ret;//存储解析结果
+    size_t size = 0;
+
+    //直接调用此前的解析函数lept_parse_value，针对数组内每个元素的每个字符进行解析
+
+    while(1)
+    {
+        lept_value tmpv;//建立一个临时的lept_value tmpv，用于存储当前的解析结果
+        lept_value_init(&tmpv);
+        if((ret = lept_parse_value(c,&tmpv)) != LEPT_PARSE_OK)//调用 lept_parse_value() 去把元素解析至这个临时值tmpv
+        {
+            break;//注意解析错误情况先break，缓冲区还有数据需要pop
+        }
+        //若当前元素，解析成功，则解析结果肯定已经存储进了临时值 tmpv
+        //那么就把tmpv内的数据拷贝到 用于存储 数组解析结果数据 的 c->stack中
+        memcpy(lept_context_stack_realloc(c,sizeof(lept_value)), &tmpv, sizeof(lept_value));
+        size++;
+        lept_parse_whitespace(c);//略过空格，c->json指针会更新
+        if (*c->json == ',')
+        {
+            c->json++;
+            lept_parse_whitespace(c);
+        }
+        else if (*c->json == ']')//数组解析结束了，可能是整个数组的结束符，也可能是中间类型为数组的数组元素的结束符
+        {
+            c->json++;
+            v->type = LEPT_ARRAY;
+
+            v->uion.array.arr_size = size;
+            size *= sizeof(lept_value);//计算这堆数据所占总字节数，用于分配数组的所需字节数的内存
+
+            v->uion.array.arr = (lept_value*)malloc(size);
+            memcpy(v->uion.array.arr, lept_context_stack_pop(c, size), size);
+            //把c->stack内解析完毕的数据，正式填充到 用于存储解析结果的 lept_value的 array数组中
+            //此后，c->stack应该又恢复原状，空的状态
+
+            return LEPT_PARSE_OK;
+        }
+        else
+        {
+            ret = LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+            break;
+        }
+    }
+    for (size_t i = 0; i < size; i++)//解析错误的过程，栈缓冲区可能还存在之前解析成功的部分字符，此时得不到pop，需要单独处理
+    {
+        lept_value_free((lept_value*)lept_context_stack_pop(c, sizeof(lept_value)));
+    }
+    return ret;
+}
+
+// 解析 Json对象 数据类型
+static int lept_parse_object(lept_context* c, lept_value* v)
+{
+    size_t size;
+    lept_member member;
+    int ret;
+    EXPECT(c, '{');
+    lept_parse_whitespace(c);
+    if (*c->json == '}') ///对象的结束符
+    {
+        v->type = LEPT_OBJECT;
+        v->uion.object.memb = 0;
+        v->uion.object.object_size = 0;
+        c->json++;
+        return LEPT_PARSE_OK;
+    }
+    member.key = NULL;
+    size = 0;//统计解析了多少个元素，对于objectt来说，就是member的个数，显然，遇到 结束符的时候，才会使用该size，普通流程中，仅不断size++
+    while(1) //这种 <死循环+内部条件if else>，的架构模式可以学一学，<流程化场景>的编程方法
+    {
+        lept_value_init(&member.value);
+
+        // 1、解析 json object的member的 key 
+        char* str;
+        if (*c->json != '"') {
+            ret = LEPT_PARSE_MISS_KEY;
+            break;
+        }
+        if ((ret = lept_parse_string_raw(c, &str, &member.key_length)) != LEPT_PARSE_OK)//字符串解析结果已经写入了str
+        {
+            break;
+        }
+        memcpy(member.key = (char*)malloc(member.key_length + 1), str, member.key_length);//从str把解析结果写入member key
+        member.key[member.key_length] = '\0';//字符串的结束符
+
+        //2、json obejct的k-v中间的一些字符处理，比如 k-v之间的冒号、空格
+        lept_parse_whitespace(c);
+        if (*c->json != ':') {
+            ret = LEPT_PARSE_MISS_COLON;
+            break;
+        }
+        c->json++;
+        lept_parse_whitespace(c);
+
+        // 3、解析json object的member的 value
+        if ((ret = lept_parse_value(c, &member.value)) != LEPT_PARSE_OK)
+        {
+            break;
+        }
+        memcpy(lept_context_stack_realloc(c, sizeof(lept_member)), &member, sizeof(lept_member));
+
+        //至此，解析完毕一个member，即一个 key-value对
+        size++;
+        member.key = NULL; 
+        /* \todo parse ws [comma | right-curly-brace] ws */
+
+        lept_parse_whitespace(c);
+        if (*c->json == ',') //遇到逗号，则继续下一个member的解析
+        {
+            c->json++;
+            lept_parse_whitespace(c);
+        }
+        else if (*c->json == '}') //Json 对象的结束符，直接return
+        {
+            size_t s = sizeof(lept_member) * size;
+            c->json++;
+            v->type = LEPT_OBJECT;
+            v->uion.object.object_size = size;
+            memcpy(v->uion.object.memb = (lept_member*)malloc(s), lept_context_stack_pop(c, s), s);
+            return LEPT_PARSE_OK;
+        }
+        else //否则，遇到非法，直接解析失败
+        {
+            ret = LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET;
+            break;
+        }
+    }
+    free(member.key);
+    for (size_t i = 0; i < size; i++) {
+        lept_member* m = (lept_member*)lept_context_stack_pop(c, sizeof(lept_member));
+        free(m->key);
+        lept_value_free(&m->value);
+    }
+    v->type = LEPT_NULL;
+    return ret;
+}
+
+// c指向了传入json值的第一个非空字符，v是存储c指向内容的 解析完毕的 结果type
+// 住的注意的是：任何Json文本都是以 "字符串" 形式出现的，是一个 C 字符串，数组也一样，被双引号包裹
 static int lept_parse_value(lept_context* c, lept_value* v) {
+    
+    // printf("========> lept_parse_value:%c\n",*c->json);
     //判断输入数据的类型，调用不同的具体解析方法
-    switch (*c->json) 
+    switch (*c->json)
     {
         case 'n':
         case 'f':
         case 't':
+            printf("null false true字母元素 解析\n");
             return lept_parse_literal(c,v);//null,false,true类型的Json文本数据解析，整合为一个函数
         case '\0':
             return LEPT_PARSE_EXPECT_VALUE;//全空白
-        case '"'://双引号，说明输入数据是字符串，需要解析字符串
+        case '"': //双引号，说明输入数据是字符串，需要解析字符串
+            printf("字符串 解析\n");
             return lept_parse_string(c,v);
+        case '['://输入的是数组
+            printf("数组 解析\n");
+            return lept_parse_array(c,v);
+        case '{':
+            printf("object解析\n");
+            return lept_parse_object(c,v);
         default:
+            printf("number 解析:char = %c , ASCII = %d\n" , *c->json,*c->json);
             return lept_parse_number(c,v);
     }
 }
 
-//统一解析任何类型数据的函数
-int lept_parse(lept_value* v, const char* json) {
 
+//统一解析任何类型数据的函数
+int lept_parse(lept_value* v, const char* json) 
+{
     assert(v != NULL);
 
     //定义并初始化lept_context，lept_context用于存放原始输入的数据（char* json）
     //因为后续需要不断对输入数据进行解析动作，所以定义一个结构lept_context，方便传输
     lept_context c;
     c.json = json;
-    v->type = LEPT_NULL;
-    // lept_value_init_type(v);
-
     c.stack = NULL;//初始化用于缓冲的栈区
     c.capacity = c.top = 0;
+
+    // v->type = LEPT_NULL;
+    lept_value_init(v);
+    
 
     lept_parse_whitespace(&c);//略过空格,"space TTT space"
 
     //若字符之后还有其他字符，则应该返回LEPT_PARSE_ROOT_NOT_SINGULAR
     int ret;
+    
     if((ret = lept_parse_value(&c, v)) == LEPT_PARSE_OK)
     {
         lept_parse_whitespace(&c);
         if(*(c.json) != '\0')
         {
+            v->type = LEPT_NULL;
             ret = LEPT_PARSE_ROOT_NOT_SINGULAR;
         }
     }

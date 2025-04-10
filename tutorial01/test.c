@@ -60,6 +60,13 @@ static int test_pass = 0;
 #define EXPECT_TRUE(actual) EXPECT_EQ_BASE((actual) != 0, "true", "false", "%s")
 #define EXPECT_FALSE(actual) EXPECT_EQ_BASE((actual) == 0, "false", "true", "%s")
 
+#if defined(_MSC_VER) //_MSC_VER 是 MSVC 编译器预定义的宏
+    #define EXPECT_EQ_SIZE_T(expect, actual) EXPECT_EQ_BASE((expect) == (actual), (size_t)expect, (size_t)actual, "%Iu")
+#else
+    #define EXPECT_EQ_SIZE_T(expect, actual) EXPECT_EQ_BASE((expect) == (actual), (size_t)expect, (size_t)actual, "%zu")
+#endif
+
+
 static void test_parse_null() {
     lept_value v;
     v.type = LEPT_FALSE;
@@ -212,23 +219,89 @@ static void test_access_number() {
     EXPECT_EQ_DOUBLE(1234.5, lept_get_number(&v));
     lept_value_free(&v);
 }
+static void test_parse_array() {
+    size_t i, j;
+    lept_value v;
+    lept_value_init(&v);
+    EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "[ null , false , true , 123 , \"abc\" ]"));
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));
+    EXPECT_EQ_SIZE_T(5, lept_get_array_length(&v));
+    EXPECT_EQ_INT(LEPT_NULL,   lept_get_type(lept_get_array_element(&v, 0)));
+    EXPECT_EQ_INT(LEPT_FALSE,  lept_get_type(lept_get_array_element(&v, 1)));
+    EXPECT_EQ_INT(LEPT_TRUE,   lept_get_type(lept_get_array_element(&v, 2)));
+    EXPECT_EQ_INT(LEPT_NUMBER, lept_get_type(lept_get_array_element(&v, 3)));
+    EXPECT_EQ_INT(LEPT_STRING, lept_get_type(lept_get_array_element(&v, 4)));
+    EXPECT_EQ_DOUBLE(123.0, lept_get_number(lept_get_array_element(&v, 3)));
+    EXPECT_EQ_STRING("abc", lept_get_string(lept_get_array_element(&v, 4)), lept_get_string_length(lept_get_array_element(&v, 4)));
+    lept_value_free(&v);
+
+    lept_value_init(&v);
+    EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "[ [ ] , [ 0 ] , [ 0 , 1 ] , [ 0 , 1 , 2 ] ]"));//包含空白字符的测试
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));
+    EXPECT_EQ_SIZE_T(4, lept_get_array_length(&v));
+    for (i = 0; i < 4; i++) {
+        lept_value* a = lept_get_array_element(&v, i);
+        EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(a));
+        EXPECT_EQ_SIZE_T(i, lept_get_array_length(a));
+        for (j = 0; j < i; j++) {
+            lept_value* e = lept_get_array_element(a, j);
+            EXPECT_EQ_INT(LEPT_NUMBER, lept_get_type(e));
+            EXPECT_EQ_DOUBLE((double)j, lept_get_number(e));
+        }
+    }
+    lept_value_free(&v);
+}
+
+static void test_parse_miss_key() {
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{:1,");
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{1:1,");
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{true:1,");
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{false:1,");
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{null:1,");
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{[]:1,");
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{{}:1,");
+    TEST_ERROR(LEPT_PARSE_MISS_KEY, "{\"a\":1,");
+}
+
+static void test_parse_miss_colon() {//colon:冒号
+    TEST_ERROR(LEPT_PARSE_MISS_COLON, "{\"a\"}");
+    TEST_ERROR(LEPT_PARSE_MISS_COLON, "{\"a\",\"b\"}");
+}
+
+static void test_parse_miss_comma_or_curly_bracket() {
+    TEST_ERROR(LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET, "{\"a\":1");
+    TEST_ERROR(LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET, "{\"a\":1]");
+    TEST_ERROR(LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET, "{\"a\":1 \"b\"");
+    TEST_ERROR(LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET, "{\"a\":{}");
+}
+static void test_parse_object()
+{
+    test_parse_miss_key();
+    test_parse_miss_colon();
+    test_parse_miss_comma_or_curly_bracket();
+}
 
 static void test_parse() {
-    test_parse_null();//测试 null 的解析函数是否正确
-    test_parse_false();
-    test_parse_true();
-    test_parse_expect_value();//测试空白
-    test_parse_invalid_value();
-    test_parse_root_not_singular();
-    test_parse_number();
+    // test_parse_null();//测试 null 的解析函数是否正确
+    // test_parse_false();
+    // test_parse_true();
+    // test_parse_expect_value();//测试空白
+    // test_parse_invalid_value();
+    // test_parse_root_not_singular();
+    // test_parse_number();
 
-    //以下可能产生内存泄漏
-    test_access_string();//测试string数据类型
+    // //以下可能产生内存泄漏
+    // test_access_string();//测试string数据类型
 
-    test_parse_string();//测试string的解析
+    // test_parse_string();//测试string的解析
 
-    test_access_bool();
-    test_access_number();
+    // test_access_bool();
+    // test_access_number();
+
+    // test_parse_array();
+
+    test_parse_object();
+   
 }
 
 

@@ -5,13 +5,13 @@
 
 // JSON 中有 6 种数据类型
 // LEPT_NULL表示默认类型，即，当前json数据，没有设置任何类型
-typedef enum { 
+typedef enum {
     LEPT_NULL, 
     LEPT_FALSE, LEPT_TRUE, //bool类型
     LEPT_NUMBER, //number类型
-     LEPT_STRING,  //字符串类型
-     LEPT_ARRAY,  //数组 
-     LEPT_OBJECT //对象
+    LEPT_STRING,  //字符串类型
+    LEPT_ARRAY,  //数组 
+    LEPT_OBJECT //对象
 } lept_type;
 
 //用于存储解析结果
@@ -29,19 +29,48 @@ typedef enum {
 //     size_t len;
 // }lept_value;
 
-typedef struct {
+
+typedef struct lept_value lept_value;
+typedef struct lept_member lept_member;
+
+struct lept_value
+{
     lept_type type;
-    union
+    union//对于所有Json的数据类型(数组，对象，字符串，bool...)，用union结构表示，因为，任意时刻lept_value只会是其中一种数据类型
     {
-        double n;//存储number数据
+        double number;//存储number数据
         struct //存储字符串数据
         {
             char* str;
             size_t len;
         }s;
+        struct //存储Json数组 数据，json数组是由多个数组元素组成的，而数组元素可以是Json任何类型的数据
+        {
+            lept_value* arr;//Json数组用动态数组结构实现，本质就是一个指针，指向内容是 lept_value(因为数组内元素可以是任何类型数据)
+            size_t arr_size;//数组元素个数
+        }array;
+        struct//存储json 对象类型的数据
+        {
+            lept_member* memb;//对象类型是很多个lept_member，所以肯定要用数组结构来表达，且是C语言中的动态数组,即一个指针指向每个元素的类型
+            size_t object_size;//对象内部kmember个数，即k-v对的数量
+        }object;
     }uion;
-}lept_value;
+};
 
+/*
+    Json对象 数据结构 设计：
+    Json对象，整体上和Json数组相似
+    数组，由数组元素组成，数组元素本质是Json各种值(true/false，string，null...)
+    对象，由member组成，
+        每个member就是一个key-value对;
+        而key只能是字符串;
+        value可以是Json任何值，比如 字符串，number，true/false，null,这一点和json数组一样
+*/
+struct lept_member//Json对象的成员
+{
+    char* key; size_t key_length;  //member的key，因为key是string类型，所以，以及key的长度
+    lept_value value;     //member的value
+};
 
 
 // lept_parse 返回值
@@ -53,7 +82,11 @@ enum {
     LEPT_PARSE_NUMBER_TOO_BIG ,//错误码，用于number类型数据解析，解析的结果数字数值溢出
     LEPT_PARSE_MISS_QUOTATION_MARK,//错误码，用于string类型数据解析，字符串没有正常以双引号结束 的场景
     LEPT_PARSE_INVALID_STRING_ESCAPE,
-    LEPT_PARSE_INVALID_STRING_CHAR
+    LEPT_PARSE_INVALID_STRING_CHAR,
+    LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET,
+    LEPT_PARSE_MISS_KEY,
+    LEPT_PARSE_MISS_COLON,////colon:冒号，标记，缺少冒号 的解析错误
+    LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET
 };
 
 //解析Json，解析为一个树状数据结构(原始Json字符串解析为一个Json对象的数据结构)
@@ -80,6 +113,16 @@ void lept_set_number(lept_value* v, double n);//把数据n，写入lept_value
 
 int lept_get_bool(const lept_value* v);
 void lept_set_bool(lept_value* v,int boolval);
+
+int lept_get_array_length(const lept_value* v);//获取数组长度
+lept_value* lept_get_array_element(const lept_value* v,size_t indx);//获取数组元素，返回指针，指向元素的指针，返回元素本身不太好，因为你不知道该数组的该元素是什么类型
+void lept_set_array(lept_value* v,lept_value* e,size_t size);
+
+//对象类型数据 get/set
+size_t lept_get_object_size(const lept_value* v);
+const char* lept_get_object_key(const lept_value* v, size_t index);//获取json对象的第index个member的key
+size_t lept_get_object_key_length(const lept_value* v, size_t index);
+lept_value* lept_get_object_value(const lept_value* v, size_t index);//获取json对象的第index个member的value
 // =================================get set ======================================
 
 //重置 用于存储 当前json数据 的 结构体
